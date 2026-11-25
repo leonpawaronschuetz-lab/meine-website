@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omas Kochstube · VR-Kochspiel</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  body {
+    margin: 0;
+    background: #e7d6b5;
+    font-family: system-ui, sans-serif;
+  }
+  #bar {
+    position: fixed;
+    z-index: 2;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+  }
+  #bar[hidden] { display: none; }
+  #bar span, button {
+    border-radius: 12px;
+    padding: 10px 14px;
+    font: 600 16px system-ui;
+  }
+  #bar span { color: #fcf0d3; background: #263a31; }
+  button {
+    pointer-events: auto;
+    color: #263a31;
+    background: #fcf0d3;
+    border: 2px solid #263a31;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="help" role="status">Maus: ziehen oder zweimal klicken · WASD: gehen · Pfeile: drehen · Esc: loslassen</span>
+  <button id="vr" type="button" aria-label="Enter VR – Virtuelle Realität starten">Enter VR</button>
+</div>
+
+<a-scene id="scene" background="color:#eedcba" vr-mode-ui="enabled:false"
+         renderer="antialias:true; colorManagement:true">
+  <a-entity id="room"></a-entity>
+  <a-entity id="worktop"></a-entity>
+  <a-entity id="interface"></a-entity>
+  <a-entity light="type:ambient; color:#fff1d6; intensity:1.05"></a-entity>
+  <a-entity position="-2 4 2" light="type:directional; color:#ffe1b3; intensity:1.55"></a-entity>
+  <a-entity id="rig" position="0 0 2.45">
+    <a-entity id="eye" camera position="0 1.65 0"
+      look-controls="mouseEnabled:false; touchEnabled:false"
+      wasd-controls="acceleration:14"></a-entity>
+    <a-entity class="hand" laser-controls="hand:left; model:false"
+      raycaster="objects:.aim; far:8" line="color:#ffc275"></a-entity>
+    <a-entity class="hand" laser-controls="hand:right; model:false"
+      raycaster="objects:.aim; far:8" line="color:#ffc275"></a-entity>
+  </a-entity>
+</a-scene>
+<noscript>Bitte aktiviere JavaScript, um Omas Kochstube zu spielen.</noscript>
+
+<script>
+/* 1. Rezepte
+   Jeder Spielzug hat eine Quelle, ein Ziel und einen Hinweis.
+   click steht für das Einschalten des Herdes, wait für eine kurze Wartezeit. */
+const egg = 'Ei';
+const milk = 'Milch';
+const bowl = 'Schüssel';
+const pan = 'Pfanne';
+const pot = 'Topf';
+const stove = 'Herd';
+const scale = 'Waage';
+const plate = 'Teller';
+const spoon = 'Kochlöffel';
+
+const move = (from, to, hint, effect) => ({from, to, hint, effect});
+const click = (to, hint, effect) => move(null, to, hint, effect);
+const wait = (seconds, hint, effect) => ({seconds, hint, effect});
+
+const heatPan = [
+  move(pan, stove, 'Stell die Pfanne auf den Herd.', 'vessel'),
+  click(stove, 'Schalte den Herd ein.', 'heat'),
+  move('Butter', stove, 'Gib Butter in die Pfanne.')
+];
+
+const recipes = [
+  {
+    name: 'Palatschinken',
+    station: [bowl, scale, plate],
+    items: ['Mehl', milk, egg, 'Salz', 'Schneebesen', pan, 'Butter',
+            'Pfannenwender', 'Marmelade', 'Pfeffer'],
+    steps: [
+      ['125 g Mehl abwiegen und in die Schüssel geben',
+        move('Mehl', scale, 'Gib 100 g Mehl auf die Waage.', '100'),
+        move('Mehl', scale, 'Gib noch 25 g Mehl auf die Waage.', '125'),
+        move(scale, bowl, 'Gib das gewogene Mehl in die Schüssel.')],
+      ['250 ml Milch zur Schüssel geben',
+        move(milk, bowl, 'Gieße 250 ml Milch in die Schüssel.')],
+      ['Zwei Eier in die Schüssel schlagen',
+        move(egg, bowl, 'Schlage das erste Ei auf.'),
+        move(egg, bowl, 'Schlage das zweite Ei auf.')],
+      ['Eine Prise Salz dazugeben',
+        move('Salz', bowl, 'Würze die Mischung mit einer Prise Salz.')],
+      ['Mit dem Schneebesen verrühren',
+        move('Schneebesen', bowl, 'Rühre den Teig mit dem Schneebesen.')],
+      ['Pfanne auf den Herd, einschalten und Butter dazu', ...heatPan],
+      ['Teig eingießen, kurz warten und wenden',
+        move(bowl, stove, 'Gieße den Teig aus der Schüssel in die Pfanne.'),
+        wait(5, 'Lass den Teig kurz backen.', 'hot'),
+        move('Pfannenwender', stove, 'Wende den Palatschinken.'),
+        wait(3, 'Die zweite Seite backt kurz.')],
+      ['Auf den Teller legen und mit Marmelade bestreichen',
+        move(pan, plate, 'Zieh die Pfanne zum Teller.', 'serve'),
+        move('Marmelade', plate, 'Bestreiche den Palatschinken.')]
+    ]
+  },
+  {
+    name: 'Rührei',
+    station: [bowl, plate],
+    items: [egg, 'Salz', milk, 'Gabel', pan, 'Butter', spoon,
+            'Schnittlauch', 'Marmelade'],
+    steps: [
+      ['Drei Eier in die Schüssel schlagen',
+        move(egg, bowl, 'Schlage das erste Ei auf.'),
+        move(egg, bowl, 'Schlage das zweite Ei auf.'),
+        move(egg, bowl, 'Schlage das dritte Ei auf.')],
+      ['Eine Prise Salz und einen Schluck Milch dazugeben',
+        move('Salz', bowl, 'Gib eine Prise Salz dazu.'),
+        move(milk, bowl, 'Gib einen Schluck Milch dazu.')],
+      ['Mit der Gabel verrühren',
+        move('Gabel', bowl, 'Verquirle alles mit der Gabel.')],
+      ['Pfanne auf den Herd, einschalten und Butter dazu', ...heatPan],
+      ['Eiermasse eingießen und rühren, bis sie stockt',
+        move(bowl, stove, 'Gieße die Eiermasse in die Pfanne.', 'hot'),
+        move(spoon, stove, 'Rühre mit dem Kochlöffel.'),
+        wait(5, 'Die Eiermasse stockt gerade.')],
+      ['Auf den Teller geben und Schnittlauch darüberstreuen',
+        move(pan, plate, 'Zieh die Pfanne zum Teller.', 'serve'),
+        move('Schnittlauch', plate, 'Streue Schnittlauch über das Rührei.')]
+    ]
+  },
+  {
+    name: 'Grießbrei',
+    station: [scale, bowl],
+    items: [milk, pot, 'Grieß', 'Zucker', spoon, 'Zimt & Zucker', 'Salz'],
+    steps: [
+      ['500 ml Milch in den Topf gießen',
+        move(milk, pot, 'Gieße 500 ml Milch in den Topf.')],
+      ['Topf auf den Herd und Herd einschalten',
+        move(pot, stove, 'Stell den Topf auf den Herd.', 'vessel'),
+        click(stove, 'Schalte den Herd ein.', 'heat')],
+      ['Milch wärmen, 50 g Grieß abwiegen und einrühren',
+        wait(5, 'Warte, bis die Milch warm ist.', 'hot'),
+        move('Grieß', scale, 'Fülle 25 g Grieß auf die Waage.', '25'),
+        move('Grieß', scale, 'Fülle weitere 25 g Grieß auf die Waage.', '50'),
+        move(scale, stove, 'Gib den gewogenen Grieß in den Topf.'),
+        move(spoon, stove, 'Rühre den Grieß mit dem Kochlöffel ein.')],
+      ['Zucker dazugeben und rühren, bis der Brei dick ist',
+        move('Zucker', stove, 'Gib Zucker in den Topf.'),
+        move(spoon, stove, 'Rühre den Brei mit dem Kochlöffel.'),
+        wait(5, 'Der Brei wird gerade dick.')],
+      ['In die Schüssel füllen und mit Zimt und Zucker bestreuen',
+        move(pot, bowl, 'Zieh den Topf zur Schüssel.', 'serve'),
+        move('Zimt & Zucker', bowl, 'Streue Zimt und Zucker über den Brei.')]
+    ]
+  }
+];
+
+/* 2. Grundformen und Schilder
+   A-Frame verwendet Meter. X läuft nach rechts, Y nach oben, Z zum Spieler.
+   Die Schilder sind selbst gezeichnete Canvas-Texturen für gut lesbare Umlaute. */
+const scene = document.querySelector('#scene');
+const room = document.querySelector('#room');
+const worktop = document.querySelector('#worktop');
+const ui = document.querySelector('#interface');
+const help = document.querySelector('#help');
+const T = AFRAME.THREE;
+
+const ink = '#253c32';
+const paper = '#fff1d4';
+const mint = '#a9c5a6';
+const copper = '#b87047';
+const pos = (x, y, z) => ({x, y, z});
+
+function element(parent, tag, attrs) {
+  const child = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) child.setAttribute(key, value);
+  parent.append(child);
+  return child;
+}
+
+const group = (parent, x, y, z) =>
+  element(parent, 'a-entity', {position: pos(x, y, z)});
+
+const box = (parent, x, y, z, width, height, depth, color) =>
+  element(parent, 'a-box', {position: pos(x, y, z), width, height, depth, color});
+
+const cylinder = (parent, x, y, z, radius, height, color, bottom = radius) =>
+  element(parent, 'a-cylinder', {
+    position: pos(x, y, z), radius, height,
+    'radius-bottom': bottom, 'radius-top': radius, 'segments-radial': 24, color
+  });
+
+const sphere = (parent, x, y, z, radius, color, stretch = pos(1, 1, 1)) =>
+  element(parent, 'a-sphere', {
+    position: pos(x, y, z), radius, scale: stretch,
+    'segments-width': 12, 'segments-height': 8, color
+  });
+
+function sign(parent, x, y, z, width, height, pixelsX, pixelsY) {
+  const surface = group(parent, x, y, z);
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelsX;
+  canvas.height = pixelsY;
+  const ctx = canvas.getContext('2d');
+  const texture = new T.CanvasTexture(canvas);
+  texture.colorSpace = T.SRGBColorSpace;
+  const mesh = new T.Mesh(
+    new T.PlaneGeometry(width, height),
+    new T.MeshBasicMaterial({map: texture, side: T.DoubleSide})
+  );
+  surface.setObject3D('mesh', mesh);
+
+  return {
+    surface,
+    paint(draw) {
+      draw(ctx, pixelsX, pixelsY);
+      texture.needsUpdate = true;
+    },
+    dispose() {
+      texture.dispose();
+      mesh.material.dispose();
+      mesh.geometry.dispose();
+    }
+  };
+}
+
+const signs = [];
+
+function label(parent, x, y, z, width, height, caption, bg = ink, fg = paper, size = 52) {
+  const panel = sign(parent, x, y, z, width, height, 640, Math.round(640 * height / width));
+  panel.paint((c, w, h) => {
+    c.fillStyle = bg;
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = fg;
+    c.font = 'bold ' + size + 'px system-ui';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(caption, w / 2, h / 2, w - 36);
+  });
+  return panel;
+}
+
+/* 3. Küche bauen
+   Schleifen erzeugen die Karos am Boden, an der Wand und am Fenster. */
+function kitchen() {
+  for (let x = 0; x < 12; x++) for (let z = 0; z < 11; z++) {
+    box(room, (x - 5.5) * .56, -.04, (z - 3) * .56, .555, .08, .555,
+      (x + z) % 2 ? '#793b37' : '#f4e9d1');
+  }
+  box(room, 0, 1.55, -1.94, 6.75, 3.1, .18, '#e9d2a9');
+  for (let x = 0; x < 20; x++) for (let y = 0; y < 5; y++) {
+    box(room, (x - 9.5) * .33, .22 + y * .32, -1.84, .315, .305, .035,
+      (x + y) % 2 ? '#bbd1b4' : '#f7ecce');
+  }
+  for (const side of [-1, 1]) {
+    box(room, side * 3.35, 1.56, .45, .12, 3.1, 4.8, '#e5d4b4');
+    box(room, side * 3.26, .83, .45, .08, 1.62, 4.8, mint);
+  }
+
+  // Holztisch mit Fugen zwischen den Brettern und Retro-Herd daneben.
+  for (const x of [-1.48, 1.49]) for (const z of [-.86, .79]) {
+    box(room, x, .48, z, .14, .96, .14, '#86502e');
+  }
+  box(room, 0, .98, -.04, 3.31, .14, 1.91, '#a2693e');
+  box(room, 0, .85, .86, 3.15, .16, .09, '#86502e');
+  for (let i = 0; i < 6; i++) {
+    box(room, 0, 1.051, -.79 + i * .28, 3.27, .002, .009, '#8d5835');
+  }
+  box(room, 2.44, .51, -.47, 1.05, 1.02, 1.08, mint);
+  box(room, 2.44, 1.04, -.47, 1.09, .09, 1.12, paper);
+  box(room, 2.44, .52, .08, .77, .52, .035, '#36413c');
+  box(room, 2.44, .78, .12, .52, .045, .07, copper);
+  for (let i = 0; i < 4; i++) {
+    cylinder(room, 2.12 + i * .21, .91, .13, .056, .08, '#4c4034')
+      .setAttribute('rotation', '90 0 0');
+  }
+
+  // Fenster mit Sprossen, Fensterbank und karierten Vorhängen.
+  box(room, -2.39, 2.12, -1.74, 1.28, 1.04, .13, '#8d6041');
+  box(room, -2.39, 2.12, -1.66, 1.13, .88, .06, '#a1c6c6');
+  box(room, -2.39, 2.12, -1.61, .047, .89, .05, paper);
+  box(room, -2.39, 2.12, -1.61, 1.15, .046, .05, paper);
+  box(room, -2.39, 1.61, -1.6, 1.38, .10, .29, paper);
+  box(room, -2.39, 2.66, -1.55, 1.42, .04, .05, '#634a38');
+  for (const side of [-1, 1]) for (let x = 0; x < 3; x++) for (let y = 0; y < 7; y++) {
+    box(room, -2.39 + side * (.33 + x * .095), 1.77 + y * .12, -1.54,
+      .096, .121, .045, (x + y) % 2 ? '#ac5f53' : '#f0d3af');
+  }
+
+  // Vorratsregal und Kupferpfannen.
+  box(room, 2.36, 2.12, -1.57, 1.54, .085, .43, '#94613c');
+  box(room, 2.36, 2.05, -1.66, 1.43, .10, .11, '#754930');
+  ['#b2cbaf', '#b57557', '#e4bf83', '#80a8ac', '#f1dfbe'].forEach((color, i) => {
+    const x = 1.78 + i * .29;
+    const h = i % 2 ? .35 : .28;
+    cylinder(room, x, 2.16 + h / 2, -1.56, .102, h, color);
+    cylinder(room, x, 2.16 + h, -1.56, .111, .045, copper);
+    box(room, x, 2.16 + h / 2, -1.458, .14, .09, .005, paper);
+  });
+  box(room, 2.33, 1.87, -1.746, 1.34, .035, .035, '#654d3b');
+  for (let i = 0; i < 3; i++) {
+    const x = 1.91 + i * .42;
+    const y = 1.48 - (i % 2) * .10;
+    cylinder(room, x, y, -1.72, .125 + i * .019, .085, copper)
+      .setAttribute('rotation', '90 0 0');
+    box(room, x, y + .23, -1.72, .047, .26, .042, '#754830');
+  }
+
+  // Wanduhr mit zwölf Markierungen und zwei Zeigern, daneben die Lampe.
+  cylinder(room, 0, 2.92, -1.70, .18, .08, copper).setAttribute('rotation', '90 0 0');
+  cylinder(room, 0, 2.92, -1.65, .15, .025, paper).setAttribute('rotation', '90 0 0');
+  for (let i = 0; i < 12; i++) {
+    const angle = i * Math.PI / 6;
+    box(room, .12 * Math.sin(angle), 2.92 + .12 * Math.cos(angle), -1.63,
+      .012, .012, .01, ink);
+  }
+  box(room, 0, 2.961, -1.62, .012, .085, .01, ink);
+  box(room, .043, 2.92, -1.62, .09, .011, .01, ink);
+  cylinder(room, 0, 3.07, -.20, .025, .57, '#493a31');
+  cylinder(room, 0, 2.81, -.20, .13, .16, '#b36d49', .29);
+  sphere(room, 0, 2.725, -.20, .068, '#ffebb0');
+  element(room, 'a-entity', {
+    position: pos(0, 2.65, -.2),
+    light: 'type:point; color:#ffd398; intensity:0.8; distance:6; decay:1'
+  });
+}
+kitchen();
+
+/* 4. Tafel und Arbeitsfläche
+   Nur die Dinge des gewählten Rezepts werden auf den Tisch gestellt.
+   Die Etiketten lassen sich genauso gut treffen wie die Gegenstände selbst. */
+box(ui, 0, 1.977, -1.425, 2.94, 1.49, .09, '#7f5036');
+const board = sign(ui, 0, 1.977, -1.37, 2.82, 1.37, 1440, 700);
+const buttons = group(ui, 0, 0, 0);
+const hitboxes = new Map();
+const objects = new Map();
+
+const roundTime = 240;
+let recipe, phase = 'menu', step = 0, actionIndex = 1;
+let start = 0, readyAt = 0, burnAt = 0, elapsed = 0;
+let wrong = 0, spills = 0, weight = '', warning = '', warningUntil = 0, score;
+let burner, dial, contents, dish, placed, held, lastPaint = '';
+
+function target(entity, name, kind, callback) {
+  entity.classList.add('aim');
+  hitboxes.set(entity.object3D, {name, kind, entity, callback});
+}
+
+function clearGroup(root) {
+  for (const [mesh, hit] of hitboxes) {
+    if (root.contains(hit.entity)) hitboxes.delete(mesh);
+  }
+  for (let i = signs.length - 1; i >= 0; i--) {
+    if (root.contains(signs[i].surface)) {
+      signs[i].dispose();
+      signs.splice(i, 1);
+    }
+  }
+  root.replaceChildren();
+}
+
+function button(x, caption, callback) {
+  const panel = label(buttons, x, 1.53, -1.34, .86, .215, caption, mint, ink, 61);
+  signs.push(panel);
+  target(panel.surface, caption, 'button', callback);
+}
+
+function reset() {
+  release();
+  clearGroup(worktop);
+  clearGroup(buttons);
+  objects.clear();
+  burner = dial = contents = dish = placed = null;
+  lastPaint = '';
+}
+
+function menu() {
+  reset();
+  phase = 'menu';
+  recipes.forEach((r, i) => button((i - 1) * .95, r.name, () => begin(r)));
+}
+
+function begin(selected) {
+  reset();
+  recipe = selected;
+  phase = 'play';
+  step = 0;
+  actionIndex = 1;
+  wrong = spills = 0;
+  readyAt = burnAt = warningUntil = 0;
+  weight = warning = '';
+  score = null;
+  start = performance.now();
+
+  makeStove();
+  const stationX = {[scale]: -1.18, [bowl]: -.23, [plate]: .63};
+  recipe.station.forEach(name => makeObject(name, stationX[name], 1.055, -.34, true));
+  recipe.items.forEach((name, i) => {
+    const x = -1.32 + (i % 5) * .66;
+    makeObject(name, x, 1.055, i < 5 ? .25 : .72, false);
+  });
+  prepareAction(start);
+}
+
+function makeStove() {
+  const root = group(worktop, 2.44, 1.085, -.48);
+  burner = cylinder(root, 0, .014, 0, .34, .037, '#373b36');
+  cylinder(root, 0, .036, 0, .24, .016, '#5a5650');
+  const badge = label(root, 0, .176, .41, .66, .14, 'Herd', ink, paper, 95);
+  signs.push(badge);
+  target(root, stove, 'station');
+  target(badge.surface, stove, 'station');
+}
+
+const colors = {
+  Mehl: '#d7aa77', Milch: '#91bdc9', Ei: '#c8925d', Salz: '#f7ecda',
+  Butter: '#f1ce69', Marmelade: '#b54d4c', Pfeffer: '#81664d',
+  Schnittlauch: '#79a961', Grieß: '#e2bf82', Zucker: '#a0c8d0',
+  'Zimt & Zucker': '#b67a50'
+};
+
+function makeObject(name, x, y, z, station) {
+  const root = group(worktop, x, y, z);
+  const model = group(root, 0, 0, 0);
+  const badge = label(root, 0, .105, .18, station ? .51 : .53, .107, name, paper, ink, 100);
+  signs.push(badge);
+
+  const kind = station ? 'station' : 'item';
+  target(root, name, kind);
+  target(badge.surface, name, kind);
+  const volume = box(root, 0, .13, 0, station ? .46 : .37, .27, .30, '#fff');
+  volume.setAttribute('material', 'visible:false');
+  objects.set(name, {root, model, home: pos(x, y, z)});
+
+  if (name === scale) {
+    box(model, 0, .08, 0, .37, .155, .30, mint);
+    cylinder(model, 0, .17, 0, .18, .035, '#797d70');
+    cylinder(model, 0, .095, .153, .062, .014, paper).setAttribute('rotation', '90 0 0');
+    const needle = box(model, .008, .111, .166, .009, .057, .009, '#a84b38');
+    needle.setAttribute('rotation', '0 0 -26');
+    dial = label(root, 0, .235, .164, .38, .12, '0 g', ink, paper, 130);
+    signs.push(dial);
+  } else if ([bowl, pan, pot, plate].includes(name)) {
+    const shallow = [plate, pan].includes(name);
+    const h = shallow ? .06 : .16;
+    const color = name === pan ? '#463d35' : name === pot ? copper : mint;
+    cylinder(model, 0, h / 2, 0, .205, h, color, shallow ? .17 : .135);
+    cylinder(model, 0, h + .006, 0, .18, .013, name === pan ? '#262b28' : paper);
+    if (name === pan) box(model, .265, .059, 0, .21, .045, .061, '#694735');
+    if (name === pot) for (const side of [-1, 1]) {
+      box(model, side * .228, .126, 0, .12, .047, .077, '#785340');
+    }
+  } else if (['Gabel', spoon, 'Schneebesen', 'Pfannenwender'].includes(name)) {
+    box(model, 0, .053, 0, .045, .055, .29, '#975e38');
+    if (name === spoon) sphere(model, 0, .065, -.126, .076, '#b78355', pos(.64, .32, 1));
+    if (name === 'Pfannenwender') box(model, 0, .067, -.126, .106, .035, .105, '#635e57');
+    if (name === 'Gabel') for (let i = -1; i <= 1; i++) {
+      box(model, i * .028, .067, -.13, .014, .022, .105, '#9fa9a6');
+    }
+    if (name === 'Schneebesen') for (let i = -1; i <= 1; i++) {
+      sphere(model, i * .026, .068, -.13, .057, '#aeb7b3', pos(.34, .22, 1.55));
+    }
+  } else if (name === egg) {
+    for (const side of [-1, 1]) {
+      sphere(model, side * .074, .079, 0, .065, colors[name], pos(.83, 1.16, .83));
+    }
+  } else if ([milk, 'Mehl', 'Grieß', 'Zucker', 'Butter'].includes(name)) {
+    const h = name === 'Butter' ? .075 : .235;
+    box(model, 0, h / 2, 0, .17, h, .128, colors[name]);
+    box(model, 0, h * .64, .065, .135, .055, .006, paper);
+    if (name !== 'Butter') box(model, 0, h + .018, 0, .17, .042, .045, colors[name]);
+  } else {
+    cylinder(model, 0, .081, 0, .066, .16, colors[name] || mint);
+    cylinder(model, 0, .171, 0, .071, .035, copper);
+    box(model, 0, .083, .067, .095, .055, .006, paper);
+  }
+}
+
+/* 5. Spielregeln
+   Nur die aktuelle Aktion zählt. Ein Fehlversuch lässt den Schritt offen.
+   Die Mengen werden für jeden gültigen Zug nach Rezept dosiert. */
+const current = () => recipe?.steps[step]?.[actionIndex];
+const now = () => performance.now();
+
+function prepareAction(time) {
+  const action = current();
+  if (!action) {
+    finish('Fertig gekocht!');
+    return;
+  }
+  if (action.seconds) readyAt = time + action.seconds * 1000;
+}
+
+function advance(time) {
+  actionIndex++;
+  if (actionIndex >= recipe.steps[step].length) {
+    step++;
+    actionIndex = 1;
+  }
+  readyAt = 0;
+  prepareAction(time);
+}
+
+function say(message, spill = false) {
+  wrong++;
+  if (spill) spills++;
+  warning = message;
+  warningUntil = now() + 2500;
+}
+
+function doMove(from, to, time) {
+  if (phase !== 'play') return;
+  update(time);
+  if (phase !== 'play') return;
+
+  const action = current();
+  if (action.seconds) {
+    warning = 'Warte kurz, bis der Küchentimer fertig ist.';
+    warningUntil = time + 1700;
+    return;
+  }
+  if (from !== action.from || to !== action.to) {
+    say(to ? 'Das passt gerade nicht. Schau auf die Tafel!'
+           : 'Daneben! Ziele auf ein beschriftetes Feld.', !to);
+    return;
+  }
+  warningUntil = 0;
+
+  if (/^\d+$/.test(action.effect || '')) {
+    weight = action.effect;
+    const correct = ['50', '125'].includes(weight);
+    dial.paint((c, w, h) => {
+      c.fillStyle = correct ? '#25704c' : ink;
+      c.fillRect(0, 0, w, h);
+      c.fillStyle = paper;
+      c.font = 'bold 120px system-ui';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(weight + ' g', w / 2, h / 2);
+    });
+  }
+
+  if (action.effect === 'vessel') {
+    placed = from;
+    const vessel = objects.get(from);
+    vessel.home = pos(2.44, 1.12, -.48);
+    vessel.root.object3D.position.copy(vessel.home);
+  }
+  if (action.effect === 'heat') burner.setAttribute('color', '#d65035');
+
+  if (action.effect === 'serve') {
+    burnAt = 0;
+    burner.setAttribute('color', '#373b36');
+    const destination = objects.get(to).model;
+    dish = cylinder(destination, 0, to === plate ? .091 : .177, 0, .155, .035,
+      recipe.name === 'Rührei' ? '#efbf52' : '#e3bb77');
+    if (contents) contents.remove();
+    contents = null;
+  }
+  if (['Marmelade', 'Schnittlauch', 'Zimt & Zucker'].includes(from) && dish) {
+    const y = to === plate ? .116 : .201;
+    const color = from === 'Schnittlauch' ? '#46744b'
+      : from === 'Marmelade' ? '#ab4e50' : '#9b653d';
+    for (let i = 0; i < 7; i++) {
+      sphere(objects.get(to).model, Math.sin(i * 2.4) * .117, y,
+        Math.cos(i * 2.4) * .117, .021, color, pos(1, .28, 1));
+    }
+  }
+  if (to === bowl || (to === pot && from === milk) ||
+      (to === stove && [bowl, scale].includes(from))) {
+    if (!['Schneebesen', 'Gabel'].includes(from) && !dish) {
+      if (contents) contents.remove();
+      const destination = objects.get(to === stove ? placed : to).model;
+      contents = cylinder(destination, 0, to === stove && placed === pan ? .083 : .176,
+        0, .139, .022, from === egg ? '#eac768' : from === milk ? '#fff4db' : '#dfbd78');
+    }
+  }
+
+  // Sobald die Speise heiß ist, bleiben 50 Sekunden zum Fertigkochen.
+  if (action.effect === 'hot') burnAt = time + 50000;
+  advance(time);
+}
+
+function update(time) {
+  if (phase !== 'play') return;
+  elapsed = Math.floor((time - start) / 1000);
+  if (burnAt && time >= burnAt) {
+    if (contents) contents.setAttribute('color', '#402d26');
+    burner.setAttribute('color', '#373b36');
+    finish('Oh nein, das Essen ist angebrannt!');
+  } else if (elapsed >= roundTime) {
+    burner.setAttribute('color', '#373b36');
+    finish('Die Küchenzeit ist vorbei!');
+  } else if (readyAt && time >= readyAt) {
+    if (current().effect === 'hot') burnAt = time + 50000;
+    advance(time);
+  }
+}
+
+function finish(title) {
+  release();
+  const completed = step === recipe.steps.length;
+  const accuracy = Math.max(0, 50 - wrong * 5);
+  const speed = Math.max(0, 30 - Math.floor(elapsed / 8));
+  const clean = Math.max(0, 20 - spills * 5 - (completed ? 0 : 10));
+  const points = accuracy + speed + clean;
+
+  score = {
+    title, accuracy, speed, clean, points,
+    stars: completed ? (points >= 85 ? 3 : points >= 65 ? 2 : 1) : 1
+  };
+  phase = 'finish';
+  button(-.48, 'Nochmal spielen', () => begin(recipe));
+  button(.48, 'Rezepte wählen', menu);
+}
+
+/* 6. Tafel zeichnen
+   Die Textur wird nur aktualisiert, wenn sich ihr Inhalt sichtbar ändert. */
+function clock(seconds) {
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function draw(time) {
+  const action = current();
+  const countdown = readyAt ? Math.max(0, Math.ceil((readyAt - time) / 1000)) : 0;
+  const untilBurn = burnAt ? Math.max(0, Math.ceil((burnAt - time) / 1000)) : 0;
+  const alert = warningUntil > time ? warning : '';
+  const key = [phase, recipe?.name, step, actionIndex, elapsed, countdown,
+    untilBurn, alert, score?.title].join('|');
+
+  if (key === lastPaint) return;
+  lastPaint = key;
+  board.paint((c, w, h) => {
+    c.fillStyle = paper;
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = ink;
+    c.fillRect(0, 0, w, 150);
+
+    function line(value, x, y, size, color = ink, weight = 'bold', max = w - x - 40) {
+      c.fillStyle = color;
+      c.font = weight + ' ' + size + 'px system-ui';
+      c.textAlign = 'left';
+      c.textBaseline = 'alphabetic';
+      c.fillText(value, x, y, max);
+    }
+
+    line('TOURISMUSSCHULE  /  KOCHSTUBE', 52, 43, 27, '#d1e0bd');
+    line(phase === 'play' ? recipe.name : 'Omas Kochstube', 52, 118, 64, paper);
+
+    if (phase === 'menu') {
+      line('Willkommen in Omas Küche!', 55, 238, 55);
+      line('Wähle ein Rezept und folge den Schritten an der Tafel.', 55, 325, 42, ink, 'normal');
+      line('Greife Zutaten und Werkzeuge und zieh sie zum passenden Ziel.', 55, 393, 42, ink, 'normal');
+      line('PC: Maus und WASD   ·   VR: zielen, Trigger halten und loslassen', 55, 487, 35);
+    } else if (phase === 'finish') {
+      line(score.title, 55, 238, 58);
+      line('★'.repeat(score.stars) + '☆'.repeat(3 - score.stars) +
+        '   ' + score.points + ' / 100 Punkte', 55, 337, 65, '#9d542c');
+      line('Genauigkeit ' + score.accuracy + '/50   ·   Zeit ' + score.speed +
+        '/30   ·   Sauberkeit ' + score.clean + '/20', 55, 438, 41);
+    } else {
+      line('Noch ' + clock(Math.max(0, roundTime - elapsed)), 1124, 106, 43, paper);
+      recipe.steps.forEach(([title], i) => {
+        const y = 159 + i * 45;
+        if (i === step) {
+          c.fillStyle = '#f4cd7d';
+          c.fillRect(28, y, w - 56, 43);
+        }
+        const mark = i < step ? '✓ ' : i === step ? '▶ ' : '';
+        line(mark + (i + 1) + '. ' + title, 49, y + 33, 35,
+          i < step ? '#246743' : i === step ? ink : '#5f5c4e',
+          i === step ? 'bold' : 'normal');
+      });
+      c.fillStyle = alert ? '#922e29' : '#dae6c5';
+      c.fillRect(28, 532, w - 56, 98);
+      line(alert || action?.hint || '', 49, 590, 44, alert ? '#fff5e4' : ink,
+        'bold', countdown ? 1040 : w - 89);
+      if (countdown) line('Noch ' + countdown + ' s', 1130, 590, 40, alert ? paper : ink);
+
+      if (untilBurn && !countdown) {
+        line('Heiße Platte: noch ' + untilBurn + ' s bis zum Anbrennen', 49, 674, 32,
+          untilBurn <= 12 ? '#9d352d' : ink);
+      } else {
+        line('Trigger halten oder mit der Maus ziehen. Herd zum Einschalten antippen.', 49, 674, 31);
+      }
+    }
+  });
+}
+
+/* 7. Steuerung
+   Maus und Controller benutzen dasselbe Prinzip: Ein Strahl trifft ein
+   Objekt. Gezogene Dinge folgen dem Strahl und springen beim Loslassen
+   auf ihren Ablageplatz. Ein erfolgreicher Zug kann den Ablageplatz ändern. */
+const ray = new T.Raycaster();
+const pointer = new T.Vector2();
+const heldPosition = new T.Vector3();
+const orientation = new T.Quaternion();
+const normalScale = new T.Vector3(1, 1, 1);
+const handScale = new T.Vector3(.68, .68, .68);
+
+function aim(source) {
+  scene.object3D.updateMatrixWorld(true);
+  if (source === 'mouse') {
+    if (!scene.camera) return false;
+    ray.setFromCamera(pointer, scene.camera);
+  } else {
+    source.object3D.getWorldPosition(ray.ray.origin);
+    source.object3D.getWorldQuaternion(orientation);
+    ray.ray.direction.set(0, 0, -1).applyQuaternion(orientation).normalize();
+  }
+  ray.far = 9;
+  return true;
+}
+
+function picked(source) {
+  if (!aim(source)) return null;
+  const nodes = [];
+  for (const [node, hit] of hitboxes) {
+    if (held?.name !== hit.name) nodes.push(node);
+  }
+  const intersections = ray.intersectObjects(nodes, true);
+
+  // Flache Etiketten haben Vorrang vor den größeren Trefferfeldern.
+  intersections.sort((a, b) =>
+    Number(b.object.geometry?.type === 'PlaneGeometry') -
+    Number(a.object.geometry?.type === 'PlaneGeometry')
+  );
+  for (const result of intersections) {
+    let node = result.object;
+    while (node) {
+      if (hitboxes.has(node)) return hitboxes.get(node);
+      node = node.parent;
+    }
+  }
+  return null;
+}
+
+function grab(hit, source) {
+  const data = objects.get(hit.name);
+  if (!data) return;
+  held = {...data, name: hit.name, source};
+  for (const target of hitboxes.values()) {
+    if (target.name === held.name) target.entity.classList.remove('aim');
+  }
+  data.root.object3D.scale.copy(handScale);
+  carry();
+}
+
+function carry() {
+  if (!held || !aim(held.source)) return;
+  ray.ray.at(held.source === 'mouse' ? 1.25 : .35, heldPosition);
+  held.root.object3D.position.copy(heldPosition);
+}
+
+function release() {
+  if (!held) return;
+  held.root.object3D.position.copy(held.home);
+  held.root.object3D.scale.copy(normalScale);
+  for (const target of hitboxes.values()) {
+    if (target.name === held.name) target.entity.classList.add('aim');
+  }
+  held = null;
+}
+
+function drop(source) {
+  if (held?.source !== source) return;
+  const hit = picked(source);
+  const name = held.name;
+  release();
+  // Ein Gefäß, das bereits auf der Platte steht, zählt als Herdziel.
+  doMove(name, hit?.name === placed ? stove : hit?.name, now());
+}
+
+function press(source) {
+  if (held) return false;
+  const hit = picked(source);
+  if (!hit) return false;
+  if (hit.kind === 'button') {
+    hit.callback();
+    return false;
+  }
+  if (phase !== 'play') return false;
+  if (hit.name === stove || (hit.name === placed && current()?.from === null)) {
+    doMove(null, stove, now());
+    return false;
+  }
+  if (hit.kind === 'item' || (hit.name === bowl && recipe.name !== 'Grießbrei') ||
+      (hit.name === scale && weight)) {
+    grab(hit, source);
+    return true;
+  }
+  return false;
+}
+
+function setupMouse() {
+  const canvas = scene.canvas;
+  let down = null;
+  function locate(event) {
+    const bounds = canvas.getBoundingClientRect();
+    pointer.set(
+      2 * (event.clientX - bounds.left) / bounds.width - 1,
+      1 - 2 * (event.clientY - bounds.top) / bounds.height
+    );
+  }
+
+  canvas.addEventListener('pointermove', locate);
+  canvas.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || scene.is('vr-mode')) return;
+    locate(event);
+    if (held?.source === 'mouse') {
+      drop('mouse');
+      return;
+    }
+    if (press('mouse')) {
+      down = {x: event.clientX, y: event.clientY};
+      canvas.setPointerCapture(event.pointerId);
+    }
+  });
+  canvas.addEventListener('pointerup', event => {
+    if (!down) return;
+    locate(event);
+    // Ein Klick ohne Ziehen hält das Objekt bis zum nächsten Klick fest.
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8) drop('mouse');
+    down = null;
+  });
+  canvas.addEventListener('pointercancel', () => {
+    down = null;
+    release();
+  });
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') release();
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      if (!scene.is('vr-mode')) {
+        document.querySelector('#rig').object3D.rotation.y += event.key === 'ArrowLeft' ? .08 : -.08;
+      }
+    }
+  });
+}
+
+for (const hand of document.querySelectorAll('.hand')) {
+  hand.addEventListener('triggerdown', () => {
+    if (scene.is('vr-mode')) press(hand);
+  });
+  hand.addEventListener('triggerup', () => drop(hand));
+  hand.addEventListener('controllerdisconnected', () => {
+    if (held?.source === hand) release();
+  });
+}
+
+document.querySelector('#vr').addEventListener('click', async () => {
+  try {
+    if (!navigator.xr?.requestSession) throw new Error('WebXR fehlt');
+    await scene.enterVR();
+  } catch {
+    help.textContent = 'VR ist hier nicht verfügbar. Nutze den Quest-Browser und eine HTTPS-Adresse.';
+  }
+});
+
+scene.addEventListener('enter-vr', () => {
+  release();
+  document.querySelector('#bar').hidden = true;
+  const rig = document.querySelector('#rig').object3D;
+  rig.position.set(0, 0, 2.45);
+  rig.rotation.set(0, 0, 0);
+});
+scene.addEventListener('exit-vr', () => {
+  release();
+  document.querySelector('#bar').hidden = false;
+  document.querySelector('#eye').object3D.position.set(0, 1.65, 0);
+});
+
+function frame(time) {
+  update(time);
+  carry();
+  draw(time);
+  requestAnimationFrame(frame);
+}
+
+menu();
+if (scene.canvas) setupMouse();
+else scene.addEventListener('render-target-loaded', setupMouse, {once: true});
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
